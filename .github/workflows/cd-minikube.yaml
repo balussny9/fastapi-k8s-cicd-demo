@@ -1,0 +1,55 @@
+name: CD - Deploy to Minikube
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy-to-minikube:
+    runs-on: self-hosted
+
+    env:
+      K8S_NAMESPACE: default
+      IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --- Apply Base Manifests ---
+      - name: Apply Deployment and Service
+        run: |
+          kubectl apply -f k8s/deployment.yaml -n "$K8S_NAMESPACE"
+          kubectl apply -f k8s/service.yaml -n "$K8S_NAMESPACE"
+
+      # --- Trigger Rollout ---
+      - name: Set new image for rollout
+        run: |
+          echo "Deploying image: $IMAGE"
+          kubectl set image deployment/fastapi-backend \
+            fastapi-backend="$IMAGE" \
+            -n "$K8S_NAMESPACE"
+
+      # --- Wait for Rollout to Succeed ---
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/fastapi-backend \
+            -n "$K8S_NAMESPACE" \
+            --timeout=60s
+
+      # --- Automatic Rollback if rollout fails ---
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Rollout failed. Performing rollback..."
+          kubectl rollout undo deployment/fastapi-backend -n "$K8S_NAMESPACE"
+          kubectl rollout status deployment/fastapi-backend -n "$K8S_NAMESPACE"
+
+      # --- Print Application Access URL ---
+      - name: Show Minikube URL
+        if: success()
+        run: |
+          echo "Deployment Successful!"
+          minikube service fastapi-backend-service \
+            -n "$K8S_NAMESPACE" \
+            --url

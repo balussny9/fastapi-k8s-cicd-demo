@@ -2,9 +2,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fastapi-backend
-  namespace: default
+  labels:
+    app: fastapi-backend
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1            # allow 1 extra pod during update
+      maxUnavailable: 0      # ensure zero downtime
   selector:
     matchLabels:
       app: fastapi-backend
@@ -15,6 +21,22 @@ spec:
     spec:
       containers:
         - name: fastapi-backend
-          image: IMAGE_PLACEHOLDER
+          # CD will override this image dynamically
+          image: ghcr.io/balussny9/fastapi-k8s-cicd-demo:latest
           ports:
             - containerPort: 8000
+
+          # These probes decide rollout success or failure
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
